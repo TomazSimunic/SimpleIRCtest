@@ -22,18 +22,21 @@ fn parse_irc_message(line: &str) -> Option<IrcMessage>{
         prefix = None;
     };
 
+    let mut params = Vec::new();
     let trailing: Option<String>;
     if let Some(pos) = s.find(" :"){
+        let before = &s[..pos];
+        
+        params.extend(before.split_whitespace().map(String::from));
+
         trailing  = Some(s[pos+2..].to_string());
-        s=&s[..pos];
     } else{
+        params.extend(s.split_whitespace().map(String::from));
         trailing = None;
     };
 
-    let mut parts = s.split_whitespace();
-
-    let command = parts.next()?.to_string();
-    let params = parts.map(String::from).collect();
+    let command = params.first()?.clone();
+    let params = params.into_iter().skip(1).collect();
 
     Some(IrcMessage{
         prefix,
@@ -51,7 +54,7 @@ fn send(stream: &mut impl Write, msg: &str){
 fn main() {
     let server = "irc.libera.chat";
     let port = "6697";
-    let nick = "mybot";
+    let nick = "rust_client_test";
     let channel = "#test";
 
     let connector = TlsConnector::new().unwrap();
@@ -68,6 +71,28 @@ fn main() {
 
         if let Some(msg) = parse_irc_message(&line){
             println!("Parsed message: {msg:?}");
+
+            match msg.command.as_str(){
+                "PING" => {
+                    if let Some(token) = msg.trailing{
+                        send(reader.get_mut(), &format!("PONG: {token}"));
+                    }
+                }
+                "001" => {
+                    send(reader.get_mut(), &format!("JOIN {channel}"));
+                }
+                "PRIVMSG" =>{
+                    if let Some(text) = msg.trailing{
+                        println!(
+                            "{} said in {}: {}",
+                            msg.prefix.as_deref().unwrap_or("?"),
+                            msg.params.first().map(String::as_str).unwrap_or("?"),
+                            text
+                        );
+                    }
+                }
+                _ => {}
+            }
 
         }
 
